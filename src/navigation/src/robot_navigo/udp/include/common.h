@@ -45,21 +45,16 @@ struct alignas(4) robotCmd  {
   unsigned int checksum = 0; // 校验字
 };
 
-struct alignas(4) trajectoryPoint {
-  float x = 0.0;
-  float y = 0.0;
-  float theta = 0.0;
-  float kappa = 0.0;
-  float t = 0.0;
-};
-
 struct alignas(4) highLevelCmd {
   uint16_t head = 0;
   uint16_t len = 0;
   float vx = 0.0;
   float vy = 0.0;
+  float roll_rate = 0.0;
+  float pitch_rate = 0.0;
   float yaw_rate = 0.0;
-  trajectoryPoint trajectory[20];
+  float height_rate = 0.0;
+  uint16_t motion_mode = 0;
   uint16_t control_mode = 0;
   uint16_t enable_control_mode = 0;
   unsigned int checksum = 0;

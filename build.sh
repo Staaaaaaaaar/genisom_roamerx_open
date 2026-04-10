@@ -4,15 +4,54 @@ set -e
 
 source /opt/ros/humble/setup.bash
 
+usage() {
+  echo "Usage: $0 [clean] all [debug]"
+  echo "./build.sh all             [build all project packages]"
+  echo "./build.sh all debug       [build all packages in Debug mode]"
+  echo "./build.sh clean all       [clean build/install/log, then build all]"
+  echo "./build.sh clean all debug [clean then build all in Debug mode]"
+}
+
 # 检查是否传入了参数
 if [ $# -eq 0 ]; then
-  echo "Usage: $0 {all deploy}"
-  echo "./build.sh all             [this command will build all project which need gazebo env.]"
-  echo "./build.sh all debug       [this command will build nav2 packages in debug mode]"
+  usage
   exit 1
 fi
 
-case $1 in
+DO_CLEAN=0
+BUILD_TARGET=""
+CMAKE_DEBUG_ARGS=""
+
+for arg in "$@"; do
+  case "$arg" in
+    clean)
+      DO_CLEAN=1
+      ;;
+    all)
+      BUILD_TARGET="all"
+      ;;
+    debug)
+      CMAKE_DEBUG_ARGS="-DCMAKE_BUILD_TYPE=Debug"
+      ;;
+    *)
+      echo "Unknown argument: $arg"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$BUILD_TARGET" ]; then
+  usage
+  exit 1
+fi
+
+if [ "$DO_CLEAN" -eq 1 ]; then
+  echo "[jszr shell log] => clean build/install/log ..."
+  rm -rf build install log
+fi
+
+case "$BUILD_TARGET" in
 all)
   echo "[jszr shell log] => will compile all project..."
   echo "[jszr shell log] => "
@@ -40,5 +79,9 @@ all)
     robot_navigo  --parallel-workers 8
   echo "[zsibot shell log] => "
   echo "[zsibot shell log] => OK"
-
+  ;;
+*)
+  usage
+  exit 1
+  ;;
 esac

@@ -41,6 +41,8 @@ endforeach()
 
 nav2_package()
 
+add_compile_options(-Wno-error=array-bounds)
+
 include(CheckCXXCompilerFlag)
 
 check_cxx_compiler_flag("-mno-avx512f" COMPILER_SUPPORTS_AVX512)

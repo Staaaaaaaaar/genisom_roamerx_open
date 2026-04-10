@@ -7,6 +7,7 @@
 
 #include "highlevel_connector.h"
 #include "robots_dog_msgs/msg/cmd_vel_with_trajectory.hpp"
+#include "std_msgs/msg/int32.hpp"
 
 class VelWithMcTrajecotryCmdUdpPublisher : public rclcpp::Node {
  public:
@@ -18,6 +19,10 @@ class VelWithMcTrajecotryCmdUdpPublisher : public rclcpp::Node {
             std::bind(&VelWithMcTrajecotryCmdUdpPublisher::
                           HandlPlannerVelWithMcTrajectoryCallback,
                       this, std::placeholders::_1));
+    mode_switch_subscriber_ = this->create_subscription<std_msgs::msg::Int32>(
+        "/mode_switch_cmd", 10,
+        std::bind(&VelWithMcTrajecotryCmdUdpPublisher::HandleModeSwitchCallback,
+                  this, std::placeholders::_1));
     RCLCPP_INFO(this->get_logger(),
                 "vel_with_mc_trajectory_cmd_udp_publisher started");
 
@@ -77,6 +82,17 @@ class VelWithMcTrajecotryCmdUdpPublisher : public rclcpp::Node {
   }
 
  private:
+  void HandleModeSwitchCallback(const std_msgs::msg::Int32::SharedPtr msg) {
+    std::lock_guard<std::mutex> lk(planner_vel_mutex_);
+    const auto mode = static_cast<uint16_t>(msg->data);
+    if (mode == cmd_.control_mode && cmd_.enable_control_mode == 1) {
+      return;
+    }
+
+    cmd_.control_mode = mode;
+    cmd_.enable_control_mode = 1;
+  }
+
   void HandlPlannerVelWithMcTrajectoryCallback(
       const robots_dog_msgs::msg::CmdVelWithTrajectory::SharedPtr msg) {
     std::lock_guard<std::mutex> lk(planner_vel_mutex_);
@@ -88,31 +104,11 @@ class VelWithMcTrajecotryCmdUdpPublisher : public rclcpp::Node {
                   ? 0.0
                   : msg->cmd_vel.twist.linear.y;
     cmd_.yaw_rate = msg->cmd_vel.twist.angular.z;
-
-    if (msg->trajectory.poses.size() != std::size(cmd_.trajectory)) {
-      RCLCPP_ERROR(this->get_logger(),
-                   "==> Received  traj size is not equal to mc reuqired "
-                   "trajectory size");
-      RCLCPP_ERROR(this->get_logger(),
-                   "Received traj size : %ld | Mc trajectory : %ld",
-                   msg->trajectory.poses.size(), std::size(cmd_.trajectory));
-      return;
+    if (cmd_.control_mode != 171) {
+      cmd_.control_mode = 171;
+      cmd_.enable_control_mode = 1;
     }
 
-    for (size_t i = 0; i < std::size(cmd_.trajectory); ++i) {
-      cmd_.trajectory[i].x = msg->trajectory.poses[i].pose.position.x;
-      cmd_.trajectory[i].y = msg->trajectory.poses[i].pose.position.y;
-
-      tf2::Quaternion q(msg->trajectory.poses[i].pose.orientation.x,
-                        msg->trajectory.poses[i].pose.orientation.y,
-                        msg->trajectory.poses[i].pose.orientation.z,
-                        msg->trajectory.poses[i].pose.orientation.w);
-
-      double roll, pitch, yaw;
-      tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-
-      cmd_.trajectory[i].theta = yaw;
-    }
   }
 
  private:
@@ -122,6 +118,7 @@ class VelWithMcTrajecotryCmdUdpPublisher : public rclcpp::Node {
   std::string CLIENT_IP;
   std::string platform_;
   std::mutex planner_vel_mutex_;
+  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr mode_switch_subscriber_;
   rclcpp::Subscription<robots_dog_msgs::msg::CmdVelWithTrajectory>::SharedPtr
       planner_vel_with_mc_traj_cmd_subscriber;
 
