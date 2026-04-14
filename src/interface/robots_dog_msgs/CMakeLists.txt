@@ -69,6 +69,7 @@ set(msg_files
         "msg/TrajectoryPoint.msg"
         "msg/UniBestNav.msg"
         "msg/UniHeading.msg"
+        "msg/UniRtkPvh.msg"
         "msg/UwbPointStamped.msg"
 )
 
@@ -164,4 +165,3 @@ set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "kanonwy")
 
 include(CPack)
-
