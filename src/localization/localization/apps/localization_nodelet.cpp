@@ -583,8 +583,21 @@ private:
   }
 
   void publish_odometry(const rclcpp::Time& stamp, const Eigen::Matrix4f& pose) {
+    RCLCPP_INFO(
+      get_logger(),
+      "[publish_odometry] stamp_ns=%ld now_ns=%ld send_tf_transforms=%s frame_id=%s child_frame_id=%s pose_xyz=[%.3f, %.3f, %.3f]",
+      static_cast<long>(stamp.nanoseconds()),
+      static_cast<long>(get_clock()->now().nanoseconds()),
+      send_tf_transforms ? "true" : "false",
+      robot_odom_frame_id.c_str(),
+      localization_odom_frame_id.c_str(),
+      pose(0, 3), pose(1, 3), pose(2, 3));
     if (send_tf_transforms) {
       if (tf_buffer->canTransform(robot_odom_frame_id, odom_child_frame_id, rclcpp::Time((int64_t)0, get_clock()->get_clock_type()))) {
+        RCLCPP_INFO(
+          get_logger(),
+          "[publish_odometry] canTransform(%s <- %s) = true",
+          robot_odom_frame_id.c_str(), odom_child_frame_id.c_str());
         geometry_msgs::msg::TransformStamped map_wrt_frame = tf2::eigenToTransform(Eigen::Isometry3d(pose.inverse().cast<double>()));
         map_wrt_frame.header.stamp = stamp;
         map_wrt_frame.header.frame_id = odom_child_frame_id;
@@ -611,12 +624,24 @@ private:
         odom_trans.child_frame_id = robot_odom_frame_id;
 
         tf_broadcaster->sendTransform(odom_trans);
+        RCLCPP_INFO(
+          get_logger(),
+          "[publish_odometry] broadcast TF map -> %s at stamp_ns=%ld",
+          robot_odom_frame_id.c_str(), static_cast<long>(stamp.nanoseconds()));
       } else {
+        RCLCPP_WARN(
+          get_logger(),
+          "[publish_odometry] canTransform(%s <- %s) = false, fallback broadcast map -> %s directly",
+          robot_odom_frame_id.c_str(), odom_child_frame_id.c_str(), odom_child_frame_id.c_str());
         geometry_msgs::msg::TransformStamped odom_trans = tf2::eigenToTransform(Eigen::Isometry3d(pose.cast<double>()));
         odom_trans.header.stamp = stamp;
         odom_trans.header.frame_id = "map";
         odom_trans.child_frame_id = odom_child_frame_id;
         tf_broadcaster->sendTransform(odom_trans);
+        RCLCPP_INFO(
+          get_logger(),
+          "[publish_odometry] broadcast fallback TF map -> %s at stamp_ns=%ld",
+          odom_child_frame_id.c_str(), static_cast<long>(stamp.nanoseconds()));
       }
     }
     // publish the transform
@@ -632,6 +657,12 @@ private:
     odom.twist.twist.linear.y = 0.0;
     odom.twist.twist.angular.z = 0.0;
     pose_pub->publish(odom);
+    RCLCPP_INFO(
+      get_logger(),
+      "[publish_odometry] published odom header_ns=%ld frame_id=%s child_frame_id=%s",
+      static_cast<long>(static_cast<long long>(odom.header.stamp.sec) * 1000000000LL + odom.header.stamp.nanosec),
+      odom.header.frame_id.c_str(),
+      odom.child_frame_id.c_str());
   }
 
   /**
