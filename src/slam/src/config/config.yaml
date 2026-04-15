@@ -7,8 +7,8 @@ laser_mapping:
     filter_size_map: 0.2
     cube_side_length: 1000.0
     common:
-        lid_topic:  "/livox/lidar"
-        imu_topic:  "/livox/imu"
+        lid_topic:  "/front_lidar"
+        imu_topic:  "/front_lidar/imu"
         time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
         time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
     preprocess:

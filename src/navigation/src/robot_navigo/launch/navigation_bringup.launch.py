@@ -101,6 +101,12 @@ def generate_launch_description():
         description='type of communication to be used'
     )
 
+    declare_tf_type_cmd = DeclareLaunchArgument(
+        'tf_type',
+        default_value='mujoco_tf',
+        description='tf type used for odometry (mujoco_tf or localization_tf)'
+    )
+
     set_map = SetLaunchConfiguration(
         'map',
         PythonExpression([
@@ -232,19 +238,17 @@ def generate_launch_description():
                 parameters=[{'platform': LaunchConfiguration('platform')}],
                 output='screen'
             ),
-            # Node(
-            #     condition=IfCondition(PythonExpression([
-            #         "'", LaunchConfiguration('communication_type'), "' == 'UDP'",
-            #         "and",
-            #         "'", LaunchConfiguration('tf_type'), "' == 'localization_tf'",
-            #         "and",
-            #         "'", LaunchConfiguration('mc_controller_type'), "' == 'RL_TRACK_VELOCITY'"
-            #     ])),
-            #     package='robot_navigo',
-            #     executable='vel_cmd_udp_pub',
-            #     parameters=[{'platform': LaunchConfiguration('platform')}],
-            #     output='screen'
-            # ),
+            Node(
+                condition=IfCondition(PythonExpression([
+                    "'", LaunchConfiguration('communication_type'), "' == 'UDP'",
+                    " and ",
+                    "'", LaunchConfiguration('mc_controller_type'), "' == 'RL_TRACK_VELOCITY'"
+                ])),
+                package='robot_navigo',
+                executable='vel_cmd_udp_pub',
+                parameters=[{'platform': LaunchConfiguration('platform')}],
+                output='screen'
+            ),
             # Node(
             #     condition=IfCondition(PythonExpression([
             #         "'", LaunchConfiguration('communication_type'), "' == 'UDP'",
@@ -302,6 +306,7 @@ def generate_launch_description():
     ld.add_action(declare_platform_cmd)
     ld.add_action(declare_mc_controller_type_cmd)
     ld.add_action(declare_communication_type_cmd)
+    ld.add_action(declare_tf_type_cmd)
 
     ld.add_action(set_map)
     ld.add_action(set_use_sim_time)

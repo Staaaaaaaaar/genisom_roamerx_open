@@ -164,7 +164,7 @@ def generate_launch_description():
             ),
             Node(
                 package='navigo_velocity_optimizer',
-                executable='velocity_optimizer',
+                executable='velocity_smoother',
                 name='velocity_optimizer',
                 output='screen',
                 respawn=use_respawn,

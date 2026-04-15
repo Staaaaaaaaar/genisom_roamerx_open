@@ -20,9 +20,9 @@ def generate_launch_description():
                 parameter_config
             ]
         ),
-        # Node(
-        #     package='rviz2',
-        #     executable='rviz2',
-        #     arguments=['-d', default_rviz_config_path]
-        # )
+        Node(
+            package='rviz2',
+            executable='rviz2',
+            arguments=['-d', default_rviz_config_path]
+        )
     ])

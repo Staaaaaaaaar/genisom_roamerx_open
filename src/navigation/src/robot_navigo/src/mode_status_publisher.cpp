@@ -30,6 +30,13 @@ private:
             received_first_cmd_vel_ = true;
             RCLCPP_INFO(this->get_logger(), "First /cmd_vel received, ready to switch to NAVIGATION when active");
         }
+
+        if (current_mode_ != 171)
+        {
+            current_mode_ = 171;
+            RCLCPP_INFO(this->get_logger(), "Switching to NAVIGATION mode (171)");
+            publishCurrentMode();
+        }
     }
 
     void PublishStatus()
@@ -68,6 +75,11 @@ private:
             }
         }
 
+        publishCurrentMode();
+    }
+
+    void publishCurrentMode()
+    {
         auto msg = std_msgs::msg::Int32();
         msg.data = current_mode_;
         publisher_->publish(msg);

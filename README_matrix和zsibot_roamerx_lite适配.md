@@ -76,7 +76,7 @@ cd zsibot_roamerx_lite
 chmod +x script/dep/install_all.sh
 ./script/dep/install_all.sh
 
-# Install robot-forward package (.deb)
+# 注意⚠️： Install robot-forward package (.deb)
 sudo apt update && sudo apt install -y ./robot-forward_0.2.6_amd64.deb
 ```
 
@@ -125,6 +125,7 @@ cd matrix/
 2. **Launch navigation in two more terminals (Docker/container recommended):**
 ```bash
 # Terminal 1
+# 注意⚠️：在终端中先export
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 export ROS_DOMAIN_ID=89
 export SDK_CLIENT_IP=127.0.0.1
@@ -132,6 +133,7 @@ cd /workspace/zsibot_roamerx_lite
 bash script/bash/start_navigation.sh nav
 
 # Terminal 2
+# 注意⚠️：在终端中先export
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 export ROS_DOMAIN_ID=89
 export SDK_CLIENT_IP=127.0.0.1
@@ -150,9 +152,24 @@ source /opt/robot/robot-forward/install/setup.bash
 /opt/robot/robot-forward/install/robot_forward/lib/robot_forward/robot_forward
 ```
 
+```bash
+# Terminal 4
+################# 注意⚠️：所有节点互相发现和转发数据的中枢 ##############################################
+ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+```bash
+# Terminal 5
+################# 注意⚠️：查看ros消息前也要export ##############################################
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+export ROS_DOMAIN_ID=89
+export SDK_CLIENT_IP=127.0.0.1
+ros2 topic list
+```
+
 You can also print the UE split commands with:
 ```bash
-bash script/bash/start_navigation.sh print
+bash script/bash/start_navigation.sh
 ```
 
 3. **Send Navigation Goals via RViz2**
@@ -317,11 +334,30 @@ ros2 action send_goal /navigate_through_poses nav2_msgs/action/NavigateThroughPo
 
 ### Map Building with SLAM
 
+################# 注意⚠️：需要在zsibot_roamerx_lite/src/slam/src/config/config.yaml文件中修改一下lid_topic和imu_topic的话题名 #####
+lid_topic:  "/front_lidar"
+imu_topic:  "/front_lidar/imu"
+#############################################################################################################################
+################# 注意⚠️：由于是ros2 所以修改完后也要单独对slam重新编译才能生效修改的内容 ##############################################
+cd /workspace/zsibot_roamerx_lite
+colcon build
+#############################################################################################################################
 ```bash
-# Run Robot SLAM 
+# Run Robot SLAM （启动odom、rviz2）
+################# 注意⚠️：需要提前export #########################################################
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+export ROS_DOMAIN_ID=89
+export SDK_CLIENT_IP=127.0.0.1
+cd /workspace/zsibot_roamerx_lite
+source install/setup.bash 
 ros2 launch robot_slam slam.launch.py
 
-# Start Mapping
+# Start Mapping （启动建图、odom轨迹和lidar点云在rviz中可视化）
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+export ROS_DOMAIN_ID=89
+export SDK_CLIENT_IP=127.0.0.1
+cd /workspace/zsibot_roamerx_lite
+source install/setup.bash
 ros2 service call /slam_state_service robots_dog_msgs/srv/MapState "{data: 3}"
 
 # Save Map 
