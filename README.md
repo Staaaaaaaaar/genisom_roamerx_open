@@ -69,8 +69,8 @@ sudo apt install ros-humble-desktop
 
 ```bash
 # Clone the repository
-git clone https://github.com/zsibot/zsibot_roamer-x_lite.git
-cd zsibot_roamerx_lite
+git clone https://github.com/zsibot/genisom_roamerx_open.git
+cd genisom_roamerx_open
 
 # Install all dependencies
 chmod +x script/dep/install_all.sh
@@ -128,14 +128,14 @@ cd matrix/
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 export ROS_DOMAIN_ID=89
 export SDK_CLIENT_IP=127.0.0.1
-cd /workspace/zsibot_roamerx_lite
+cd /workspace/genisom_roamerx_open
 bash script/bash/start_navigation.sh nav
 
 # Terminal 2
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 export ROS_DOMAIN_ID=89
 export SDK_CLIENT_IP=127.0.0.1
-cd /workspace/zsibot_roamerx_lite
+cd /workspace/genisom_roamerx_open
 bash script/bash/start_navigation.sh rviz
 ```
 
@@ -480,7 +480,7 @@ We welcome contributions from the community! Here's how to get involved:
 
 ### Reporting Issues
 
-Please use [GitHub Issues](https://github.com/your-org/zsibot_RoamerX_Lite/issues) to report bugs or request features.
+Please use [GitHub Issues](https://github.com/your-org/genisom_RoamerX_open/issues) to report bugs or request features.
 
 Include:
 - Operating system and ROS2 version
@@ -498,7 +498,7 @@ This project is released under the **Open Source License**. See [LICENSE](LICENS
 - **ROS2 Community** for the excellent navigation framework
 - **Nav2 Team** for the robust navigation stack
 - **Contributors** who help improve this project
-- **ZsiBot Community** for feedback and testing
+- **GENISOM-AI Community** for feedback and testing
 
 ---
 
