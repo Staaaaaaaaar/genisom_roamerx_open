@@ -1,4 +1,4 @@
-# ZsiBot RoamerX Lite
+# GENISOM-AI RoamerX Lite
 
 <div align="center">
 <img src="https://img.shields.io/badge/ROS2-Humble-blue" alt="ROS2 Humble">
@@ -7,7 +7,7 @@
 <img src="https://img.shields.io/badge/Language-C++-red" alt="Language">
 </div>
 
-**Open-source navigation stack for ZsiBot robots. Enables intelligent SLAM, path planning and autonomous movement. Free community version (Lite). Contributions welcome!**
+**Open-source navigation stack for GENISOM-AI robots. Enables intelligent SLAM, path planning and autonomous movement. Free community version (OPEN). Contributions welcome!**
 
 ## 🚀 Features
 
@@ -98,7 +98,7 @@ source install/setup.bash
 ```
 
 ## 🚀 Quick Start
-### 🔹 Simulation with ZsiBot-MATRiX
+### 🔹 Simulation with GENISOM-AI-MATRiX
    Welcome to explore our another open-source simulation project, MATRiX:
 👉 https://github.com/zsibot/matrix
 1. **Launch MATRiX simulation first (provides odom for UE navigation):**
@@ -227,7 +227,7 @@ TODO
 
 ## 🏗️ Architecture Overview
 
-The ZsiBot RoamerX Lite stack is organized into three main modules:
+The GENISOM-AI RoamerX Lite stack is organized into three main modules:
 
 ### 📡 Interface Module (`src/interface/`)
 - **mc_sdk_rosmsgs**: Motion controller SDK message definitions
@@ -503,5 +503,5 @@ This project is released under the **Open Source License**. See [LICENSE](LICENS
 ---
 
 <div align="center">
-Made with ❤️ by the ZsiBot Community
+Made with ❤️ by the GENISOM-AI Community
 </div>
