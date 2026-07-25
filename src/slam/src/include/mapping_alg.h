@@ -127,6 +127,7 @@ namespace robot::slam
 
     private:
         bool extrinsic_est_en = true, path_en = true;
+        bool odom_pub_en = true, tf_pub_en = true;
 
         float       res_last[100000]       = { 0.0 };
         float       DET_RANGE              = 300.0f;
@@ -137,6 +138,9 @@ namespace robot::slam
         std::condition_variable sig_buffer;
         std::string             root_dir_ = ROOT_DIR;
         std::string             lid_topic, imu_topic;
+        std::string             odom_topic = "/slam_odom";
+        std::string             odom_frame_id = "map", odom_child_frame_id = "body";
+        std::string             tf_frame_id = "map", tf_child_frame_id = "body";
         std::string             data_path_;
 
         double last_timestamp_lidar = 0, last_timestamp_imu = -1.0;

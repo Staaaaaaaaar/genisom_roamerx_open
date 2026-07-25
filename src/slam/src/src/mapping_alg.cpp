@@ -18,6 +18,13 @@ namespace robot::slam
         this->declare_parameter<bool>("publish.map_en", false);
         this->declare_parameter<bool>("publish.world_points_en", true);
         this->declare_parameter<bool>("publish.body_points_en", true);
+        this->declare_parameter<bool>("publish.odom_en", true);
+        this->declare_parameter<bool>("publish.tf_en", true);
+        this->declare_parameter<string>("topics.odom", "/slam_odom");
+        this->declare_parameter<string>("odom.frame_id", "map");
+        this->declare_parameter<string>("odom.child_frame_id", "body");
+        this->declare_parameter<string>("tf.frame_id", "map");
+        this->declare_parameter<string>("tf.child_frame_id", "body");
         this->declare_parameter<int>("max_iteration", 4);
         this->declare_parameter<string>("common.lid_topic", "/livox/lidar");
         this->declare_parameter<string>("common.imu_topic", "/livox/imu");
@@ -63,6 +70,13 @@ namespace robot::slam
         this->get_parameter_or<bool>("publish.map_en", map_pub_en, false);
         this->get_parameter_or<bool>("publish.world_points_en", pub_world_points_flag_, true);
         this->get_parameter_or<bool>("publish.body_points_en", pub_body_points_flag_, true);
+        this->get_parameter_or<bool>("publish.odom_en", odom_pub_en, true);
+        this->get_parameter_or<bool>("publish.tf_en", tf_pub_en, true);
+        this->get_parameter_or<string>("topics.odom", odom_topic, "/slam_odom");
+        this->get_parameter_or<string>("odom.frame_id", odom_frame_id, "map");
+        this->get_parameter_or<string>("odom.child_frame_id", odom_child_frame_id, "body");
+        this->get_parameter_or<string>("tf.frame_id", tf_frame_id, "map");
+        this->get_parameter_or<string>("tf.child_frame_id", tf_child_frame_id, "body");
         this->get_parameter_or<int>("max_iteration", NUM_MAX_ITERATIONS, 4);
         this->get_parameter_or<string>("common.lid_topic", lid_topic, "/livox/lidar");
         this->get_parameter_or<string>("common.imu_topic", imu_topic, "/livox/imu");
@@ -133,18 +147,27 @@ namespace robot::slam
 
         sub_imu_ptr_ = this->create_subscription<sensor_msgs::msg::Imu>(
             imu_topic, rclcpp::QoS(200).best_effort(), std::bind(&MappingAlg::imuCallBack, this, std::placeholders::_1));
-        pubLaserCloudFull_      = this->create_publisher<sensor_msgs::msg::PointCloud2>("/world_points", rclcpp::QoS(20).best_effort());
-        pubLaserCloudFull_body_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/body_points", 20);
-        pubLaserCloudMap_       = this->create_publisher<sensor_msgs::msg::PointCloud2>("/map_points", 20);
-        pubOdomAftMapped_       = this->create_publisher<nav_msgs::msg::Odometry>("/slam_odom", 20);
-        pubPath_                = this->create_publisher<nav_msgs::msg::Path>("/path", 20);
-        tf_broadcaster_         = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+        if (pub_world_points_flag_)
+            pubLaserCloudFull_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/world_points", rclcpp::QoS(20).best_effort());
+        if (pub_body_points_flag_)
+            pubLaserCloudFull_body_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/body_points", 20);
+        if (map_pub_en)
+            pubLaserCloudMap_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/map_points", 20);
+        if (odom_pub_en)
+            pubOdomAftMapped_ = this->create_publisher<nav_msgs::msg::Odometry>(odom_topic, 20);
+        if (path_en)
+            pubPath_ = this->create_publisher<nav_msgs::msg::Path>("/path", 20);
+        if (tf_pub_en)
+            tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
         state_service_ = this->create_service<robots_dog_msgs::srv::MapState>(
             "/slam_state_service", std::bind(&MappingAlg::stateCallBack, this, std::placeholders::_1, std::placeholders::_2));
 
-        auto map_period_ms = std::chrono::milliseconds(static_cast<int64_t>(1000.0));
-        map_pub_timer_ = rclcpp::create_timer(this, this->get_clock(), map_period_ms, std::bind(&MappingAlg::map_publish_callback, this));
+        if (map_pub_en)
+        {
+            auto map_period_ms = std::chrono::milliseconds(static_cast<int64_t>(1000.0));
+            map_pub_timer_ = rclcpp::create_timer(this, this->get_clock(), map_period_ms, std::bind(&MappingAlg::map_publish_callback, this));
+        }
 
         RCLCPP_INFO(this->get_logger(), "Node init finished.");
     }
@@ -543,11 +566,10 @@ namespace robot::slam
     void MappingAlg::publish_odometry(
         const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped, std::unique_ptr<tf2_ros::TransformBroadcaster>& tf_br)
     {
-        odomAftMapped.header.frame_id = "map";
-        odomAftMapped.child_frame_id  = "body";
+        odomAftMapped.header.frame_id = odom_frame_id;
+        odomAftMapped.child_frame_id  = odom_child_frame_id;
         odomAftMapped.header.stamp    = get_ros_time(lidar_end_time);
         set_posestamp(odomAftMapped.pose);
-        pubOdomAftMapped->publish(odomAftMapped);
         auto P = kf.get_P();
         for (int i = 0; i < 6; i++)
         {
@@ -559,19 +581,24 @@ namespace robot::slam
             odomAftMapped.pose.covariance[i * 6 + 4] = P(k, 1);
             odomAftMapped.pose.covariance[i * 6 + 5] = P(k, 2);
         }
+        if (odom_pub_en)
+            pubOdomAftMapped->publish(odomAftMapped);
 
-        geometry_msgs::msg::TransformStamped trans;
-        trans.header.frame_id         = "map";
-        trans.child_frame_id          = "body";
-        trans.header.stamp            = get_ros_time(lidar_end_time);
-        trans.transform.translation.x = odomAftMapped.pose.pose.position.x;
-        trans.transform.translation.y = odomAftMapped.pose.pose.position.y;
-        trans.transform.translation.z = odomAftMapped.pose.pose.position.z;
-        trans.transform.rotation.w    = odomAftMapped.pose.pose.orientation.w;
-        trans.transform.rotation.x    = odomAftMapped.pose.pose.orientation.x;
-        trans.transform.rotation.y    = odomAftMapped.pose.pose.orientation.y;
-        trans.transform.rotation.z    = odomAftMapped.pose.pose.orientation.z;
-        tf_br->sendTransform(trans);
+        if (tf_pub_en)
+        {
+            geometry_msgs::msg::TransformStamped trans;
+            trans.header.frame_id         = tf_frame_id;
+            trans.child_frame_id          = tf_child_frame_id;
+            trans.header.stamp            = get_ros_time(lidar_end_time);
+            trans.transform.translation.x = odomAftMapped.pose.pose.position.x;
+            trans.transform.translation.y = odomAftMapped.pose.pose.position.y;
+            trans.transform.translation.z = odomAftMapped.pose.pose.position.z;
+            trans.transform.rotation.w    = odomAftMapped.pose.pose.orientation.w;
+            trans.transform.rotation.x    = odomAftMapped.pose.pose.orientation.x;
+            trans.transform.rotation.y    = odomAftMapped.pose.pose.orientation.y;
+            trans.transform.rotation.z    = odomAftMapped.pose.pose.orientation.z;
+            tf_br->sendTransform(trans);
+        }
     }
 
     void MappingAlg::publish_path(rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pubPath)
@@ -786,7 +813,8 @@ namespace robot::slam
                 geoQuat.w   = state_point.rot.coeffs()[3];
                 map_incremental();
 
-                publish_odometry(pubOdomAftMapped_, tf_broadcaster_);
+                if (odom_pub_en || tf_pub_en)
+                    publish_odometry(pubOdomAftMapped_, tf_broadcaster_);
                 pubWorldPoints(pubLaserCloudFull_);
 
                 if (path_en)

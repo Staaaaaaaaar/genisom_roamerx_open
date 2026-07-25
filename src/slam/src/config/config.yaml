@@ -30,10 +30,20 @@ laser_mapping:
                     0., 1., 0.,
                     0., 0., 1.]
     publish:
+        odom_en: true                # true: publish nav_msgs/Odometry
+        tf_en: true                  # true: publish the configured dynamic TF
         path_en: true                # true: publish Path
         map_en: false                 # true: publish Map cloud
         world_points_en:  true       # false: close all the point cloud output
         body_points_en: true  # true: output the point cloud scans in IMU-body-frame
+    topics:
+        odom: "/slam_odom"
+    odom:
+        frame_id: "map"
+        child_frame_id: "body"
+    tf:
+        frame_id: "map"
+        child_frame_id: "body"
     pcd2pgm:
       file_name : "map"
       thre_z_min : -0.1
