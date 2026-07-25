@@ -40,6 +40,7 @@
 #include <std_srvs/srv/trigger.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <thread>
+#include <unordered_map>
 #include <unistd.h>
 #include <visualization_msgs/msg/marker.hpp>
 namespace robot::slam
@@ -84,6 +85,12 @@ namespace robot::slam
 
         void pubMapPoints(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudMap);
 
+        void accumulateMapPoints(const PointCloudType& cloud);
+
+        CloudPtr snapshotAccumulatedMap();
+
+        void resetSyncBuffersLocked();
+
         void stateCallBack(
             robots_dog_msgs::srv::MapState::Request::SharedPtr request, robots_dog_msgs::srv::MapState::Response::SharedPtr response);
 
@@ -126,15 +133,17 @@ namespace robot::slam
 
 
     private:
-        bool extrinsic_est_en = true, path_en = true;
-        bool odom_pub_en = true, tf_pub_en = true;
+        bool extrinsic_est_en = true, path_en = false;
+        bool odom_pub_en = true, tf_pub_en = false;
+        bool save_map_en = false;
 
-        float       res_last[100000]       = { 0.0 };
         float       DET_RANGE              = 300.0f;
         const float MOV_THRESHOLD          = 1.5f;
         double      time_diff_lidar_to_imu = 0.0;
+        double      save_map_voxel_size    = 0.2;
 
         std::mutex              mtx_buffer;
+        std::mutex              map_storage_mutex;
         std::condition_variable sig_buffer;
         std::string             root_dir_ = ROOT_DIR;
         std::string             lid_topic, imu_topic;
@@ -149,14 +158,21 @@ namespace robot::slam
         double cube_len = 0, HALF_FOV_COS = 0, FOV_DEG = 0, total_distance = 0, lidar_end_time = 0, first_lidar_time = 0.0;
         int    effct_feat_num = 0, time_log_counter = 0, scan_count = 0;
         int    iterCount = 0, feats_down_size = 0, NUM_MAX_ITERATIONS = 0, laserCloudValidNum = 0;
-        bool   point_selected_surf[100000] = { 0 };
-        bool   lidar_pushed, flg_first_scan = true, flg_EKF_inited;
+        bool   lidar_pushed = false, flg_first_scan = true, flg_EKF_inited = false;
         bool   pub_world_points_flag_ = false, pub_body_points_flag_ = false;
         bool   is_first_lidar = true;
+        bool   map_limit_warned = false;
+
+        int64_t max_lidar_buffer_size = 50;
+        int64_t max_imu_buffer_size   = 2000;
+        int64_t max_path_poses        = 10000;
+        int64_t save_map_max_points   = 2000000;
 
         Pcd2GridOptions           pcd2pgm_options_;
         std::shared_ptr<Pcd2Grid> pcd2grid_ptr_;
 
+        std::vector<float>         res_last;
+        std::vector<uint8_t>       point_selected_surf;
         std::vector<vector<int>>  pointSearchInd_surf;
         std::vector<BoxPointType> cub_needrm;
         std::vector<PointVector>  Nearest_Points;
@@ -170,9 +186,9 @@ namespace robot::slam
         CloudPtr feats_undistort  = CloudPtr(new PointCloudType());
         CloudPtr feats_down_body  = CloudPtr(new PointCloudType());
         CloudPtr feats_down_world = CloudPtr(new PointCloudType());
-        CloudPtr normvec          = CloudPtr(new PointCloudType(100000, 1));
-        CloudPtr laserCloudOri    = CloudPtr(new PointCloudType(100000, 1));
-        CloudPtr corr_normvect    = CloudPtr(new PointCloudType(100000, 1));
+        CloudPtr normvec          = CloudPtr(new PointCloudType());
+        CloudPtr laserCloudOri    = CloudPtr(new PointCloudType());
+        CloudPtr corr_normvect    = CloudPtr(new PointCloudType());
         CloudPtr _featsArray      = CloudPtr(new PointCloudType());
 
         pcl::VoxelGrid<PointType> downSizeFilterSurf;
@@ -209,8 +225,30 @@ namespace robot::slam
         double lidar_mean_scantime = 0.0;
         int    scan_num            = 0;
 
-        PointCloudType::Ptr pcl_wait_pub  = PointCloudType::Ptr(new PointCloudType());
-        PointCloudType::Ptr pcl_wait_save = PointCloudType::Ptr(new PointCloudType());
+        struct VoxelKey
+        {
+            int64_t x;
+            int64_t y;
+            int64_t z;
+
+            bool operator==(const VoxelKey& other) const
+            {
+                return x == other.x && y == other.y && z == other.z;
+            }
+        };
+
+        struct VoxelKeyHash
+        {
+            std::size_t operator()(const VoxelKey& key) const
+            {
+                std::size_t seed = std::hash<int64_t>{}(key.x);
+                seed ^= std::hash<int64_t>{}(key.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                seed ^= std::hash<int64_t>{}(key.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                return seed;
+            }
+        };
+
+        std::unordered_map<VoxelKey, PointType, VoxelKeyHash> accumulated_map;
 
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr    pubLaserCloudFull_;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr    pubLaserCloudFull_body_;

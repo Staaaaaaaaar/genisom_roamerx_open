@@ -11,6 +11,8 @@ laser_mapping:
         imu_topic:  "/front_lidar/imu"
         time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
         time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
+        max_lidar_buffer_size: 50   # reset queued sensor data when SLAM falls this many LiDAR frames behind
+        max_imu_buffer_size: 2000   # drop oldest IMU samples above this limit
     preprocess:
         lidar_type: 1                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 
         scan_line: 4
@@ -31,11 +33,12 @@ laser_mapping:
                     0., 0., 1.]
     publish:
         odom_en: true                # true: publish nav_msgs/Odometry
-        tf_en: true                  # true: publish the configured dynamic TF
-        path_en: true                # true: publish Path
-        map_en: false                 # true: publish Map cloud
-        world_points_en:  true       # false: close all the point cloud output
-        body_points_en: true  # true: output the point cloud scans in IMU-body-frame
+        tf_en: false                 # true: publish the configured dynamic TF
+        path_en: false               # true: publish Path
+        path_max_poses: 10000        # 0: unlimited; positive: bound Path memory and message size
+        map_en: false                # true: publish the accumulated voxel map
+        world_points_en: false       # true: publish current scan in map frame
+        body_points_en: false        # true: publish current scan in IMU-body frame
     topics:
         odom: "/slam_odom"
     odom:
@@ -44,6 +47,10 @@ laser_mapping:
     tf:
         frame_id: "map"
         child_frame_id: "body"
+    save:
+        map_en: false                # true: accumulate a bounded voxel map for the save service
+        map_voxel_size: 0.2          # meters; one retained point per voxel
+        map_max_points: 2000000      # 0: unlimited; positive: hard memory safety limit
     pcd2pgm:
       file_name : "map"
       thre_z_min : -0.1

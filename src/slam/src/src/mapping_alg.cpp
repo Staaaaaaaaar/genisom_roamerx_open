@@ -14,21 +14,27 @@ namespace robot::slam
     MappingAlg::MappingAlg(const rclcpp::NodeOptions& options)
         : Node("laser_mapping", options)
     {
-        this->declare_parameter<bool>("publish.path_en", true);
+        this->declare_parameter<bool>("publish.path_en", false);
         this->declare_parameter<bool>("publish.map_en", false);
-        this->declare_parameter<bool>("publish.world_points_en", true);
-        this->declare_parameter<bool>("publish.body_points_en", true);
+        this->declare_parameter<bool>("publish.world_points_en", false);
+        this->declare_parameter<bool>("publish.body_points_en", false);
         this->declare_parameter<bool>("publish.odom_en", true);
-        this->declare_parameter<bool>("publish.tf_en", true);
+        this->declare_parameter<bool>("publish.tf_en", false);
+        this->declare_parameter<int64_t>("publish.path_max_poses", 10000);
         this->declare_parameter<string>("topics.odom", "/slam_odom");
         this->declare_parameter<string>("odom.frame_id", "map");
         this->declare_parameter<string>("odom.child_frame_id", "body");
         this->declare_parameter<string>("tf.frame_id", "map");
         this->declare_parameter<string>("tf.child_frame_id", "body");
+        this->declare_parameter<bool>("save.map_en", false);
+        this->declare_parameter<double>("save.map_voxel_size", 0.2);
+        this->declare_parameter<int64_t>("save.map_max_points", 2000000);
         this->declare_parameter<int>("max_iteration", 4);
         this->declare_parameter<string>("common.lid_topic", "/livox/lidar");
         this->declare_parameter<string>("common.imu_topic", "/livox/imu");
         this->declare_parameter<double>("common.time_offset_lidar_to_imu", 0.0);
+        this->declare_parameter<int64_t>("common.max_lidar_buffer_size", 50);
+        this->declare_parameter<int64_t>("common.max_imu_buffer_size", 2000);
         this->declare_parameter<double>("filter_size_corner", 0.5);
         this->declare_parameter<double>("filter_size_surf", 0.5);
         this->declare_parameter<double>("filter_size_map", 0.5);
@@ -66,21 +72,27 @@ namespace robot::slam
         this->get_parameter_or<double>("pcd2pgm.thre_radius", pcd2pgm_options_.thre_radius, 0.1);
         this->get_parameter_or<int>("pcd2pgm.thres_point_count", pcd2pgm_options_.thres_point_count, 10);
 
-        this->get_parameter_or<bool>("publish.path_en", path_en, true);
+        this->get_parameter_or<bool>("publish.path_en", path_en, false);
         this->get_parameter_or<bool>("publish.map_en", map_pub_en, false);
-        this->get_parameter_or<bool>("publish.world_points_en", pub_world_points_flag_, true);
-        this->get_parameter_or<bool>("publish.body_points_en", pub_body_points_flag_, true);
+        this->get_parameter_or<bool>("publish.world_points_en", pub_world_points_flag_, false);
+        this->get_parameter_or<bool>("publish.body_points_en", pub_body_points_flag_, false);
         this->get_parameter_or<bool>("publish.odom_en", odom_pub_en, true);
-        this->get_parameter_or<bool>("publish.tf_en", tf_pub_en, true);
+        this->get_parameter_or<bool>("publish.tf_en", tf_pub_en, false);
+        this->get_parameter_or<int64_t>("publish.path_max_poses", max_path_poses, 10000);
         this->get_parameter_or<string>("topics.odom", odom_topic, "/slam_odom");
         this->get_parameter_or<string>("odom.frame_id", odom_frame_id, "map");
         this->get_parameter_or<string>("odom.child_frame_id", odom_child_frame_id, "body");
         this->get_parameter_or<string>("tf.frame_id", tf_frame_id, "map");
         this->get_parameter_or<string>("tf.child_frame_id", tf_child_frame_id, "body");
+        this->get_parameter_or<bool>("save.map_en", save_map_en, false);
+        this->get_parameter_or<double>("save.map_voxel_size", save_map_voxel_size, 0.2);
+        this->get_parameter_or<int64_t>("save.map_max_points", save_map_max_points, 2000000);
         this->get_parameter_or<int>("max_iteration", NUM_MAX_ITERATIONS, 4);
         this->get_parameter_or<string>("common.lid_topic", lid_topic, "/livox/lidar");
         this->get_parameter_or<string>("common.imu_topic", imu_topic, "/livox/imu");
         this->get_parameter_or<double>("common.time_offset_lidar_to_imu", time_diff_lidar_to_imu, 0.0);
+        this->get_parameter_or<int64_t>("common.max_lidar_buffer_size", max_lidar_buffer_size, 50);
+        this->get_parameter_or<int64_t>("common.max_imu_buffer_size", max_imu_buffer_size, 2000);
         this->get_parameter_or<double>("filter_size_corner", filter_size_corner_min, 0.5);
         this->get_parameter_or<double>("filter_size_surf", filter_size_surf_min, 0.5);
         this->get_parameter_or<double>("filter_size_map", filter_size_map_min, 0.5);
@@ -102,6 +114,26 @@ namespace robot::slam
         this->get_parameter_or<vector<double>>("mapping.extrinsic_T", extrinT, vector<double>());
         this->get_parameter_or<vector<double>>("mapping.extrinsic_R", extrinR, vector<double>());
 
+        max_lidar_buffer_size = std::max<int64_t>(1, max_lidar_buffer_size);
+        max_imu_buffer_size   = std::max<int64_t>(1, max_imu_buffer_size);
+        max_path_poses        = std::max<int64_t>(0, max_path_poses);
+        save_map_max_points   = std::max<int64_t>(0, save_map_max_points);
+        if (save_map_voxel_size <= 0.0)
+        {
+            RCLCPP_WARN(this->get_logger(), "save.map_voxel_size must be positive; using filter_size_map instead.");
+            save_map_voxel_size = std::max(0.01, filter_size_map_min);
+        }
+        if (extrinT.size() != 3)
+        {
+            RCLCPP_WARN(this->get_logger(), "mapping.extrinsic_T must contain 3 values; using zero translation.");
+            extrinT = { 0.0, 0.0, 0.0 };
+        }
+        if (extrinR.size() != 9)
+        {
+            RCLCPP_WARN(this->get_logger(), "mapping.extrinsic_R must contain 9 values; using identity rotation.");
+            extrinR = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
+        }
+
 #ifdef ROOT_DIR
         data_path_ = std::string(ROOT_DIR) + "/map";
 #else
@@ -117,19 +149,15 @@ namespace robot::slam
         RCLCPP_INFO(this->get_logger(), "p_pre->lidar_type %d", p_pre->lidar_type);
 
         path.header.stamp    = this->get_clock()->now();
-        path.header.frame_id = "map";
+        path.header.frame_id = odom_frame_id;
 
         FOV_DEG      = (fov_deg + 10.0) > 179.9 ? 179.9 : (fov_deg + 10.0);
         HALF_FOV_COS = cos((FOV_DEG)*0.5 * PI_M / 180.0);
 
         _featsArray.reset(new PointCloudType());
 
-        memset(point_selected_surf, true, sizeof(point_selected_surf));
-        memset(res_last, -1000.0f, sizeof(res_last));
         downSizeFilterSurf.setLeafSize(filter_size_surf_min, filter_size_surf_min, filter_size_surf_min);
         downSizeFilterMap.setLeafSize(filter_size_map_min, filter_size_map_min, filter_size_map_min);
-        memset(point_selected_surf, true, sizeof(point_selected_surf));
-        memset(res_last, -1000.0f, sizeof(res_last));
 
         Lidar_T_wrt_IMU << VEC_FROM_ARRAY(extrinT);
         Lidar_R_wrt_IMU << MAT_FROM_ARRAY(extrinR);
@@ -227,16 +255,29 @@ namespace robot::slam
 
     void MappingAlg::reset()
     {
-        time_buffer.clear();
-        lidar_buffer.clear();
-        imu_buffer.clear();
+        {
+            std::lock_guard<std::mutex> lock(mtx_buffer);
+            resetSyncBuffersLocked();
+            last_timestamp_lidar = 0.0;
+            last_timestamp_imu   = -1.0;
+        }
         is_first_lidar      = true;
         flg_first_scan      = true;
+        flg_EKF_inited      = false;
         scan_num            = 0;
         lidar_mean_scantime = 0.0;
-        memset(point_selected_surf, true, sizeof(point_selected_surf));
+        point_selected_surf.clear();
+        res_last.clear();
 
         p_imu->reset();
+
+        {
+            std::lock_guard<std::mutex> lock(map_storage_mutex);
+            accumulated_map.clear();
+            accumulated_map.rehash(0);
+            map_limit_warned = false;
+        }
+        decltype(path.poses)().swap(path.poses);
 
         state_ikfom state_updated;
         state_updated.pos = Zero3d;
@@ -244,6 +285,16 @@ namespace robot::slam
         state_point       = state_updated;  // 对state_point进行更新，state_point可视化用到
         kf.change_x(state_updated);
         Localmap_Initialized = false;
+    }
+
+    void MappingAlg::resetSyncBuffersLocked()
+    {
+        time_buffer.clear();
+        lidar_buffer.clear();
+        imu_buffer.clear();
+        Measures.imu.clear();
+        lidar_pushed = false;
+        p_imu->reset_time_state();
     }
 
 
@@ -345,31 +396,32 @@ namespace robot::slam
 
     void MappingAlg::lidarCallBack(const sensor_msgs::msg::PointCloud2::UniquePtr msg)
     {
-        mtx_buffer.lock();
-        double cur_time              = get_time_sec(msg->header.stamp);
-        double preprocess_start_time = omp_get_wtime();
+        const double cur_time = get_time_sec(msg->header.stamp);
         scan_count++;
-        if (!is_first_lidar && cur_time < last_timestamp_lidar)
-        {
-            std::cerr << "lidar loop back, clear buffer" << std::endl;
-            lidar_buffer.clear();
-        }
-        if (is_first_lidar)
-        {
-            is_first_lidar = false;
-        }
-        last_timestamp_lidar = cur_time;
 
         PointCloudType::Ptr ptr(new PointCloudType());
-
         pcl::PointCloud<livox_pcl::Point> pl_orig;
         pcl::fromROSMsg(*msg, pl_orig);
-
         p_pre->process(pl_orig, ptr);
+
+        std::lock_guard<std::mutex> lock(mtx_buffer);
+        if (!is_first_lidar && cur_time < last_timestamp_lidar)
+        {
+            RCLCPP_WARN(this->get_logger(), "LiDAR timestamp jumped backwards; resetting sensor synchronization buffers.");
+            resetSyncBuffersLocked();
+        }
+        is_first_lidar = false;
+        last_timestamp_lidar = cur_time;
+
+        if (static_cast<int64_t>(lidar_buffer.size()) >= max_lidar_buffer_size)
+        {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "LiDAR processing is falling behind; dropping buffered sensor data to bound memory usage.");
+            resetSyncBuffersLocked();
+        }
         lidar_buffer.push_back(ptr);
         time_buffer.push_back(last_timestamp_lidar);
 
-        mtx_buffer.unlock();
         sig_buffer.notify_all();
     }
 
@@ -381,12 +433,11 @@ namespace robot::slam
 
         double timestamp = get_time_sec(msg->header.stamp);
 
-        mtx_buffer.lock();
-
+        std::lock_guard<std::mutex> lock(mtx_buffer);
         if (timestamp < last_timestamp_imu)
         {
-            std::cerr << "lidar loop back, clear buffer" << std::endl;
-            imu_buffer.clear();
+            RCLCPP_WARN(this->get_logger(), "IMU timestamp jumped backwards; resetting sensor synchronization buffers.");
+            resetSyncBuffersLocked();
         }
 
         last_timestamp_imu = timestamp;
@@ -395,13 +446,19 @@ namespace robot::slam
             std::make_shared<ImuMessage>(timestamp, Vec3d(msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z),
                 Vec3d(msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z));
 
+        while (static_cast<int64_t>(imu_buffer.size()) >= max_imu_buffer_size)
+        {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "IMU processing is falling behind; dropping oldest IMU samples to bound memory usage.");
+            imu_buffer.pop_front();
+        }
         imu_buffer.push_back(imu_msg_ptr);
-        mtx_buffer.unlock();
         sig_buffer.notify_all();
     }
 
     bool MappingAlg::syncData(MeasureGroup& meas)
     {
+        std::lock_guard<std::mutex> lock(mtx_buffer);
         if (lidar_buffer.empty() || imu_buffer.empty())
         {
             return false;
@@ -437,13 +494,19 @@ namespace robot::slam
             return false;
         }
 
-        double imu_time = imu_buffer.front()->timestamp;
         meas.imu.clear();
-        while ((!imu_buffer.empty()) && (imu_time < lidar_end_time))
+        if (imu_buffer.front()->timestamp > lidar_end_time)
         {
-            imu_time = imu_buffer.front()->timestamp;
-            if (imu_time > lidar_end_time)
-                break;
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                "No IMU sample covers the current LiDAR scan; dropping this LiDAR scan.");
+            lidar_buffer.pop_front();
+            time_buffer.pop_front();
+            lidar_pushed = false;
+            return false;
+        }
+
+        while (!imu_buffer.empty() && imu_buffer.front()->timestamp <= lidar_end_time)
+        {
             meas.imu.push_back(imu_buffer.front());
             imu_buffer.pop_front();
         }
@@ -507,7 +570,6 @@ namespace robot::slam
 
     void MappingAlg::pubWorldPoints(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFull)
     {
-
         PointCloudType::Ptr laserCloudFullRes(feats_undistort);
         int                 size = laserCloudFullRes->points.size();
         PointCloudType::Ptr laserCloudWorld(new PointCloudType(size, 1));
@@ -516,7 +578,10 @@ namespace robot::slam
         {
             pointsBody2World(&laserCloudFullRes->points[i], &laserCloudWorld->points[i]);
         }
-        *pcl_wait_pub += *laserCloudWorld;
+
+        if (save_map_en || map_pub_en)
+            accumulateMapPoints(*laserCloudWorld);
+
         if (pub_world_points_flag_)
         {
             sensor_msgs::msg::PointCloud2 laserCloudmsg;
@@ -544,20 +609,64 @@ namespace robot::slam
         pubLaserCloudFull_body->publish(laserCloudmsg);
     }
 
+    void MappingAlg::accumulateMapPoints(const PointCloudType& cloud)
+    {
+        std::lock_guard<std::mutex> lock(map_storage_mutex);
+        const double inverse_voxel_size = 1.0 / save_map_voxel_size;
+
+        for (const auto& point : cloud.points)
+        {
+            if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+                continue;
+
+            const VoxelKey key{
+                static_cast<int64_t>(std::floor(point.x * inverse_voxel_size)),
+                static_cast<int64_t>(std::floor(point.y * inverse_voxel_size)),
+                static_cast<int64_t>(std::floor(point.z * inverse_voxel_size))
+            };
+            auto existing = accumulated_map.find(key);
+            if (existing != accumulated_map.end())
+            {
+                existing->second = point;
+                continue;
+            }
+
+            if (save_map_max_points > 0 && static_cast<int64_t>(accumulated_map.size()) >= save_map_max_points)
+            {
+                if (!map_limit_warned)
+                {
+                    RCLCPP_WARN(this->get_logger(),
+                        "Accumulated map reached save.map_max_points=%ld; new voxels will be skipped to prevent OOM.",
+                        static_cast<long>(save_map_max_points));
+                    map_limit_warned = true;
+                }
+                continue;
+            }
+            accumulated_map.emplace(key, point);
+        }
+    }
+
+    CloudPtr MappingAlg::snapshotAccumulatedMap()
+    {
+        auto cloud = std::make_shared<PointCloudType>();
+        std::lock_guard<std::mutex> lock(map_storage_mutex);
+        cloud->points.reserve(accumulated_map.size());
+        for (const auto& entry : accumulated_map)
+            cloud->points.push_back(entry.second);
+        cloud->width = static_cast<uint32_t>(cloud->points.size());
+        cloud->height = 1;
+        cloud->is_dense = false;
+        return cloud;
+    }
+
     void MappingAlg::pubMapPoints(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudMap)
     {
-        // PointCloudType::Ptr laserCloudFullRes(feats_down_body);
-        // int                 size = laserCloudFullRes->points.size();
-        // PointCloudType::Ptr laserCloudWorld(new PointCloudType(size, 1));
-
-        // for (int i = 0; i < size; i++)
-        // {
-        //     pointsBody2World(&laserCloudFullRes->points[i], &laserCloudWorld->points[i]);
-        // }
-        // *pcl_wait_pub += *laserCloudWorld;
+        const auto map_cloud = snapshotAccumulatedMap();
+        if (map_cloud->empty())
+            return;
 
         sensor_msgs::msg::PointCloud2 laserCloudmsg;
-        pcl::toROSMsg(*pcl_wait_pub, laserCloudmsg);
+        pcl::toROSMsg(*map_cloud, laserCloudmsg);
         laserCloudmsg.header.stamp    = get_ros_time(lidar_end_time);
         laserCloudmsg.header.frame_id = "map";
         pubLaserCloudMap->publish(laserCloudmsg);
@@ -605,12 +714,17 @@ namespace robot::slam
     {
         set_posestamp(msg_body_pose);
         msg_body_pose.header.stamp    = get_ros_time(lidar_end_time);  // ros::Time().fromSec(lidar_end_time);
-        msg_body_pose.header.frame_id = "map";
+        msg_body_pose.header.frame_id = odom_frame_id;
 
         static int jjj = 0;
         jjj++;
         if (jjj % 10 == 0)
         {
+            if (max_path_poses > 0 && static_cast<int64_t>(path.poses.size()) >= max_path_poses)
+            {
+                const auto erase_count = std::max<std::size_t>(1, path.poses.size() / 10);
+                path.poses.erase(path.poses.begin(), path.poses.begin() + erase_count);
+            }
             path.poses.push_back(msg_body_pose);
             pubPath->publish(path);
         }
@@ -618,8 +732,8 @@ namespace robot::slam
 
     void MappingAlg::h_share_model(state_ikfom& s, esekfom::dyn_share_datastruct<double>& ekfom_data)
     {
-        laserCloudOri->clear();
-        corr_normvect->clear();
+        laserCloudOri->resize(feats_down_size);
+        corr_normvect->resize(feats_down_size);
 
 #ifdef MP_EN
         omp_set_num_threads(MP_PROC_NUM);
@@ -698,6 +812,9 @@ namespace robot::slam
             // ROS_WARN("No Effective Points! \n");
             return;
         }
+
+        laserCloudOri->resize(effct_feat_num);
+        corr_normvect->resize(effct_feat_num);
 
         /*** Computation of Measuremnt Jacobian matrix H and measurents vector ***/
         ekfom_data.h_x = Eigen::MatrixXd::Zero(effct_feat_num, 12);  // 23
@@ -786,6 +903,8 @@ namespace robot::slam
 
                 normvec->resize(feats_down_size);
                 feats_down_world->resize(feats_down_size);
+                point_selected_surf.assign(feats_down_size, 1U);
+                res_last.assign(feats_down_size, -1000.0f);
 
                 Vec3d ext_euler = SO3ToEuler(state_point.offset_R_L_I);
 
@@ -815,7 +934,8 @@ namespace robot::slam
 
                 if (odom_pub_en || tf_pub_en)
                     publish_odometry(pubOdomAftMapped_, tf_broadcaster_);
-                pubWorldPoints(pubLaserCloudFull_);
+                if (pub_world_points_flag_ || save_map_en || map_pub_en)
+                    pubWorldPoints(pubLaserCloudFull_);
 
                 if (path_en)
                     publish_path(pubPath_);
@@ -842,35 +962,45 @@ namespace robot::slam
 
     void MappingAlg::finish()
     {
-        if (pcl_wait_pub->size() > 0)
+        if (!save_map_en && !map_pub_en)
         {
-            string         file_name = data_path_ + string("/map.pcd");
-            pcl::PCDWriter pcd_writer;
-            cout << "current scan saved to /data/" << file_name << endl;
-            pcd_writer.writeBinary(file_name, *pcl_wait_pub);
-
-            string pcd2grid_dir = data_path_ + "/" + pcd2pgm_options_.file_name;
-            pcd2grid_ptr_->run(pcl_wait_pub, pcd2grid_dir);
-
-            std::ofstream ofs;
-            std::string   path_flie = data_path_ + "/map.txt";
-            ofs.open(path_flie, std::ios::out | std::ios::trunc);
-            if (!ofs.is_open())
-            {
-                std::cout << "Failed to open traj_file: " << path_flie << std::endl;
-                return;
-            }
-
-            double theta;
-            ofs << "# path" << std::endl;
-            for (const auto& p : path.poses)
-            {
-                theta = QuaternionToYaw(p.pose.orientation.x, p.pose.orientation.y, p.pose.orientation.z, p.pose.orientation.w);
-                ofs << std::fixed << std::setprecision(2) << p.pose.position.x << " " << p.pose.position.y << " " << theta << std::endl;
-            }
-            ofs.close();
-
-            RCLCPP_INFO(get_logger(), "Save Map Success.");
+            RCLCPP_INFO(get_logger(), "Map accumulation is disabled; nothing to save.");
+            return;
         }
+
+        const auto map_cloud = snapshotAccumulatedMap();
+        if (map_cloud->empty())
+        {
+            RCLCPP_WARN(get_logger(), "Accumulated map is empty; nothing to save.");
+            return;
+        }
+
+        string         file_name = data_path_ + string("/map.pcd");
+        pcl::PCDWriter pcd_writer;
+        cout << "current scan saved to " << file_name << endl;
+        pcd_writer.writeBinary(file_name, *map_cloud);
+
+        string pcd2grid_dir = data_path_ + "/" + pcd2pgm_options_.file_name;
+        pcd2grid_ptr_->run(map_cloud, pcd2grid_dir);
+
+        std::ofstream ofs;
+        std::string   path_flie = data_path_ + "/map.txt";
+        ofs.open(path_flie, std::ios::out | std::ios::trunc);
+        if (!ofs.is_open())
+        {
+            std::cout << "Failed to open traj_file: " << path_flie << std::endl;
+            return;
+        }
+
+        double theta;
+        ofs << "# path" << std::endl;
+        for (const auto& p : path.poses)
+        {
+            theta = QuaternionToYaw(p.pose.orientation.x, p.pose.orientation.y, p.pose.orientation.z, p.pose.orientation.w);
+            ofs << std::fixed << std::setprecision(2) << p.pose.position.x << " " << p.pose.position.y << " " << theta << std::endl;
+        }
+        ofs.close();
+
+        RCLCPP_INFO(get_logger(), "Save Map Success. points=%zu", map_cloud->size());
     }
 }  // namespace robot::slam

@@ -1799,6 +1799,12 @@ T MANUAL_Q<T>::back()
 template <typename T>
 void MANUAL_Q<T>::push(T op)
 {
+    if (counter >= Q_LEN)
+    {
+        head++;
+        head %= Q_LEN;
+        counter = Q_LEN - 1;
+    }
     q[tail] = op;
     counter++;
     if (is_empty)

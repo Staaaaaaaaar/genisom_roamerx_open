@@ -27,6 +27,8 @@ public:
 
     void reset();
 
+    void reset_time_state();
+
     ~ImuProcess();
 
     void                          Reset();

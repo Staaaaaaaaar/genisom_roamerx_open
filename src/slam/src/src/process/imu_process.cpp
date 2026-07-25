@@ -7,7 +7,8 @@ const bool time_list(robot::slam::PointType& x, robot::slam::PointType& y)
 ImuProcess::ImuProcess()
     : b_first_frame_(true),
       imu_need_init_(true),
-      start_timestamp_(-1)
+      start_timestamp_(-1),
+      last_lidar_end_time_(-1)
 {
     init_iter_num   = 1;
     Q               = process_noise_cov();
@@ -74,6 +75,13 @@ void ImuProcess::reset()
     cov_gyr      = robot::slam::Vec3d(0.1, 0.1, 0.1);
     cov_bias_gyr = robot::slam::Vec3d(0.0001, 0.0001, 0.0001);
     cov_bias_acc = robot::slam::Vec3d(0.0001, 0.0001, 0.0001);
+    last_lidar_end_time_ = -1;
+}
+
+void ImuProcess::reset_time_state()
+{
+    last_lidar_end_time_ = -1;
+    last_imu_.reset(new robot::slam::ImuMessage());
 }
 
 void ImuProcess::set_gyr_cov(const robot::slam::Vec3d& scaler)
@@ -153,6 +161,12 @@ void ImuProcess::IMU_init(const robot::slam::MeasureGroup& meas, esekfom::esekf<
 void ImuProcess::UndistortPcl(
     const robot::slam::MeasureGroup& meas, esekfom::esekf<state_ikfom, 12, input_ikfom>& kf_state, robot::slam::PointCloudType& pcl_out)
 {
+    if (last_lidar_end_time_ < 0.0)
+    {
+        last_lidar_end_time_ = meas.lidar_beg_time;
+        last_imu_ = meas.imu.front();
+    }
+
     /*** add the imu of the last frame-tail to the of current frame-head ***/
     auto v_imu = meas.imu;
     v_imu.push_front(last_imu_);

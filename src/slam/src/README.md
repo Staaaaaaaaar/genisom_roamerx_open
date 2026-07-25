@@ -92,6 +92,8 @@ ros2 service call /slam_state_service robots_dog_msgs/srv/MapState "{data: 5}"
 |   --common.imu_topic   |   str    |     "/livox/imu"     | 订阅imu话题（默认Qos为best_effort） |
 |    --common.time_sync_en    |   bool   |              false              | 是否进行时间同步 |
 | --common.time_offset_lidar_to_imu |   double   |     0.0     | 雷达数据落后imu时间 |
+| --common.max_lidar_buffer_size | int | 50 | LiDAR处理积压上限，达到后丢弃积压数据并重新同步 |
+| --common.max_imu_buffer_size | int | 2000 | IMU缓存上限，超过后丢弃最旧数据 |
 |       --preprocess.lidar_type       |   int   |      1       |  雷达类型默认为1（livox: mid360）  |
 |      --preprocess.scan_line      |   int   | 4 | 雷达线束数量 |
 | --preprocess.blind | double | 0.5 | 雷达盲区半径 |
@@ -107,16 +109,20 @@ ros2 service call /slam_state_service robots_dog_msgs/srv/MapState "{data: 5}"
 | --mapping.extrinsic_T | vetor | [ -0.011, -0.02329, 0.04412 ] | lidar2imu平移 |
 | --mapping.extrinsic_R | vetor | [ 1., 0., 0.,0.,1.,0.,0.,0.,1.] | lidar2imu旋转 |
 | --publish.odom_en | bool | true | 是否发布里程计话题 |
-| --publish.tf_en | bool | true | 是否发布动态TF |
-| --publish.path_en | bool | true | 是否发布路径 |
+| --publish.tf_en | bool | false | 是否发布动态TF |
+| --publish.path_en | bool | false | 是否发布路径 |
+| --publish.path_max_poses | int | 10000 | Path最多保留的位姿数量，0表示不限制 |
 | --publish.map_en | bool | false | 是否发布地图点云 |
-| --publish.world_points_en | bool | true | 是否发布map坐标系下的点云 |
-| --publish.body_points_en | bool | true | 是否发布body坐标系下的点云 |
+| --publish.world_points_en | bool | false | 是否发布map坐标系下的当前帧点云 |
+| --publish.body_points_en | bool | false | 是否发布body坐标系下的当前帧点云 |
 | --topics.odom | str | "/slam_odom" | 里程计话题名称 |
 | --odom.frame_id | str | "map" | 里程计消息父坐标系 |
 | --odom.child_frame_id | str | "body" | 里程计消息子坐标系 |
 | --tf.frame_id | str | "map" | 动态TF父坐标系 |
 | --tf.child_frame_id | str | "body" | 动态TF子坐标系 |
+| --save.map_en | bool | false | 是否为保存服务累计全局体素地图；纯里程计模式应关闭 |
+| --save.map_voxel_size | double | 0.2 | 保存地图体素尺寸，每个体素最多保留一个点 |
+| --save.map_max_points | int | 2000000 | 保存地图最大点数，0表示不限制 |
 | --pcd2pgm.file_name | str | "map" | 2D地图前缀名字 |
 | --pcd2pgm.thre_z_min | double | 0.1 | 提取有效点云的最小z值 |
 | --pcd2pgm.thre_z_max | double | 2.0 | 提取有效点云的最大z值 |
@@ -125,4 +131,4 @@ ros2 service call /slam_state_service robots_dog_msgs/srv/MapState "{data: 5}"
 | --pcd2pgm.thre_radius | double | 0.1 | 半径滤波半径大小 |
 | --pcd2pgm.thres_point_count | int | 10 | 半径滤波半径数量阈值 |
 
-`注：发布map坐标系点云话题为: /world_points，qos为best_effort；发布body坐标系下点云话题为：/body_points，qos为reliable；发布路径话题为: /path，qos为reliable；里程计话题、消息frame和动态TF frame可分别配置。frame参数只修改消息中的坐标系名称，不会计算body与base_link等坐标系之间的物理外参。`
+`注：默认配置为纯里程计模式，只发布 /slam_odom。发布map坐标系当前帧点云话题为: /world_points，qos为best_effort；发布body坐标系下当前帧点云话题为：/body_points，qos为reliable；发布路径话题为: /path，qos为reliable。需要保存PCD/PGM地图时必须启用 save.map_en；publish.map_en也会自动启用同一份有界体素地图缓存。里程计话题、消息frame和动态TF frame可分别配置。frame参数只修改消息中的坐标系名称，不会计算body与base_link等坐标系之间的物理外参。`
