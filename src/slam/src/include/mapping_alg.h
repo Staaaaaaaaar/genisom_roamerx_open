@@ -117,14 +117,21 @@ namespace robot::slam
         template <typename T>
         void set_posestamp(T& out)
         {
-            out.pose.position.x    = state_point.pos(0);
-            out.pose.position.y    = state_point.pos(1);
-            out.pose.position.z    = state_point.pos(2);
-            out.pose.orientation.x = geoQuat.x;
-            out.pose.orientation.y = geoQuat.y;
-            out.pose.orientation.z = geoQuat.z;
-            out.pose.orientation.w = geoQuat.w;
+            Vec3d base_position;
+            Mat3d base_rotation;
+            get_base_pose(base_position, base_rotation);
+            const Quatd base_orientation(base_rotation);
+
+            out.pose.position.x    = base_position.x();
+            out.pose.position.y    = base_position.y();
+            out.pose.position.z    = base_position.z();
+            out.pose.orientation.x = base_orientation.x();
+            out.pose.orientation.y = base_orientation.y();
+            out.pose.orientation.z = base_orientation.z();
+            out.pose.orientation.w = base_orientation.w();
         }
+
+        void get_base_pose(Vec3d& base_position, Mat3d& base_rotation) const;
 
         inline double QuaternionToYaw(double x, double y, double z, double w)
         {
@@ -178,6 +185,8 @@ namespace robot::slam
         std::vector<PointVector>  Nearest_Points;
         std::vector<double>       extrinT;
         std::vector<double>       extrinR;
+        std::vector<double>       base_to_imu_translation_param;
+        std::vector<double>       base_to_imu_rotation_param;
         std::deque<double>        time_buffer;
         std::deque<CloudPtr>      lidar_buffer;
         std::deque<ImuMessagePtr> imu_buffer;
@@ -200,6 +209,8 @@ namespace robot::slam
         Vec3d position_last   = Zero3d;
         Vec3d Lidar_T_wrt_IMU = Zero3d;
         Mat3d Lidar_R_wrt_IMU = Eye3d;
+        Vec3d base_to_imu_translation = Zero3d;
+        Mat3d base_to_imu_rotation    = Eye3d;
 
         MeasureGroup                                 Measures;
         esekfom::esekf<state_ikfom, 12, input_ikfom> kf;

@@ -39,6 +39,7 @@ public:
     void                          set_acc_cov(const robot::slam::Vec3d& scaler);
     void                          set_gyr_bias_cov(const robot::slam::Vec3d& b_g);
     void                          set_acc_bias_cov(const robot::slam::Vec3d& b_a);
+    robot::slam::Vec3d            angular_velocity() const;
     Eigen::Matrix<double, 12, 12> Q;
     void                          Process(
                                  const robot::slam::MeasureGroup& meas, esekfom::esekf<state_ikfom, 12, input_ikfom>& kf_state, robot::slam::CloudPtr pcl_un_);

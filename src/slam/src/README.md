@@ -120,6 +120,8 @@ ros2 service call /slam_state_service robots_dog_msgs/srv/MapState "{data: 5}"
 | --odom.child_frame_id | str | "body" | 里程计消息子坐标系 |
 | --tf.frame_id | str | "map" | 动态TF父坐标系 |
 | --tf.child_frame_id | str | "body" | 动态TF子坐标系 |
+| --base_link_to_imu.translation | vector | [0., 0., 0.] | `base_link`原点到IMU原点的平移，使用`base_link`坐标系表达 |
+| --base_link_to_imu.rotation | vector | [1.,0.,0.,0.,1.,0.,0.,0.,1.] | `imu_link`到`base_link`的3x3行优先旋转矩阵 |
 | --save.map_en | bool | false | 是否为保存服务累计全局体素地图；纯里程计模式应关闭 |
 | --save.map_voxel_size | double | 0.2 | 保存地图体素尺寸，每个体素最多保留一个点 |
 | --save.map_max_points | int | 2000000 | 保存地图最大点数，0表示不限制 |
@@ -131,4 +133,6 @@ ros2 service call /slam_state_service robots_dog_msgs/srv/MapState "{data: 5}"
 | --pcd2pgm.thre_radius | double | 0.1 | 半径滤波半径大小 |
 | --pcd2pgm.thres_point_count | int | 10 | 半径滤波半径数量阈值 |
 
-`注：默认配置为纯里程计模式，只发布 /slam_odom。发布map坐标系当前帧点云话题为: /world_points，qos为best_effort；发布body坐标系下当前帧点云话题为：/body_points，qos为reliable；发布路径话题为: /path，qos为reliable。需要保存PCD/PGM地图时必须启用 save.map_en；publish.map_en也会自动启用同一份有界体素地图缓存。里程计话题、消息frame和动态TF frame可分别配置。frame参数只修改消息中的坐标系名称，不会计算body与base_link等坐标系之间的物理外参。`
+`注：默认配置为纯里程计模式，只发布 /slam_odom。发布map坐标系当前帧点云话题为: /world_points，qos为best_effort；发布body坐标系下当前帧点云话题为：/body_points，qos为reliable；发布路径话题为: /path，qos为reliable。需要保存PCD/PGM地图时必须启用 save.map_en；publish.map_en也会自动启用同一份有界体素地图缓存。里程计话题、消息frame和动态TF frame可分别配置。`
+
+`base_link_to_imu`描述静态TF `base_link -> imu_link`。LIO内部状态是IMU原点在世界坐标系中的位姿和速度；发布器会应用该外参，输出机体`base_link`原点的位姿，同时发布在`odom.child_frame_id`坐标系中表达的线速度和角速度。默认零平移、单位旋转保持旧版行为。真机配置必须与TF树中的`base_link -> imu_link`一致，且`odom.child_frame_id`和`tf.child_frame_id`应设置为`base_link`。`

@@ -104,6 +104,11 @@ void ImuProcess::set_acc_bias_cov(const robot::slam::Vec3d& b_a)
     cov_bias_acc = b_a;
 }
 
+robot::slam::Vec3d ImuProcess::angular_velocity() const
+{
+    return angvel_last;
+}
+
 void ImuProcess::IMU_init(const robot::slam::MeasureGroup& meas, esekfom::esekf<state_ikfom, 12, input_ikfom>& kf_state, int& N)
 {
     robot::slam::Vec3d cur_acc, cur_gyr;

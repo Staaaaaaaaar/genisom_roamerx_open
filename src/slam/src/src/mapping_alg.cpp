@@ -26,6 +26,9 @@ namespace robot::slam
         this->declare_parameter<string>("odom.child_frame_id", "body");
         this->declare_parameter<string>("tf.frame_id", "map");
         this->declare_parameter<string>("tf.child_frame_id", "body");
+        this->declare_parameter<vector<double>>("base_link_to_imu.translation", { 0.0, 0.0, 0.0 });
+        this->declare_parameter<vector<double>>(
+            "base_link_to_imu.rotation", { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 });
         this->declare_parameter<bool>("save.map_en", false);
         this->declare_parameter<double>("save.map_voxel_size", 0.2);
         this->declare_parameter<int64_t>("save.map_max_points", 2000000);
@@ -84,6 +87,10 @@ namespace robot::slam
         this->get_parameter_or<string>("odom.child_frame_id", odom_child_frame_id, "body");
         this->get_parameter_or<string>("tf.frame_id", tf_frame_id, "map");
         this->get_parameter_or<string>("tf.child_frame_id", tf_child_frame_id, "body");
+        this->get_parameter_or<vector<double>>(
+            "base_link_to_imu.translation", base_to_imu_translation_param, { 0.0, 0.0, 0.0 });
+        this->get_parameter_or<vector<double>>("base_link_to_imu.rotation", base_to_imu_rotation_param,
+            { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 });
         this->get_parameter_or<bool>("save.map_en", save_map_en, false);
         this->get_parameter_or<double>("save.map_voxel_size", save_map_voxel_size, 0.2);
         this->get_parameter_or<int64_t>("save.map_max_points", save_map_max_points, 2000000);
@@ -133,6 +140,34 @@ namespace robot::slam
             RCLCPP_WARN(this->get_logger(), "mapping.extrinsic_R must contain 9 values; using identity rotation.");
             extrinR = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
         }
+        if (base_to_imu_translation_param.size() != 3)
+        {
+            RCLCPP_WARN(
+                this->get_logger(), "base_link_to_imu.translation must contain 3 values; using zero translation.");
+            base_to_imu_translation_param = { 0.0, 0.0, 0.0 };
+        }
+        base_to_imu_translation << VEC_FROM_ARRAY(base_to_imu_translation_param);
+        if (!base_to_imu_translation.allFinite())
+        {
+            RCLCPP_WARN(this->get_logger(), "base_link_to_imu.translation must contain finite values; using zero translation.");
+            base_to_imu_translation.setZero();
+        }
+
+        if (base_to_imu_rotation_param.size() != 9)
+        {
+            RCLCPP_WARN(this->get_logger(), "base_link_to_imu.rotation must contain 9 values; using identity rotation.");
+            base_to_imu_rotation_param = { 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0 };
+        }
+        base_to_imu_rotation << MAT_FROM_ARRAY(base_to_imu_rotation_param);
+        const double rotation_orthogonality_error =
+            (base_to_imu_rotation.transpose() * base_to_imu_rotation - Mat3d::Identity()).norm();
+        if (!base_to_imu_rotation.allFinite() || std::abs(base_to_imu_rotation.determinant() - 1.0) > 1.0e-3 ||
+            rotation_orthogonality_error > 1.0e-3)
+        {
+            RCLCPP_WARN(
+                this->get_logger(), "base_link_to_imu.rotation must be a proper orthonormal rotation; using identity rotation.");
+            base_to_imu_rotation.setIdentity();
+        }
 
 #ifdef ROOT_DIR
         data_path_ = std::string(ROOT_DIR) + "/map";
@@ -166,6 +201,10 @@ namespace robot::slam
         p_imu->set_acc_cov(Vec3d(acc_cov, acc_cov, acc_cov));
         p_imu->set_gyr_bias_cov(Vec3d(b_gyr_cov, b_gyr_cov, b_gyr_cov));
         p_imu->set_acc_bias_cov(Vec3d(b_acc_cov, b_acc_cov, b_acc_cov));
+
+        RCLCPP_INFO(this->get_logger(),
+            "Applying base_link->imu_link transform: translation [%.6f, %.6f, %.6f]; odometry Twist is expressed in '%s'.",
+            base_to_imu_translation.x(), base_to_imu_translation.y(), base_to_imu_translation.z(), odom_child_frame_id.c_str());
 
         init();
         pcd2grid_ptr_ = std::make_shared<Pcd2Grid>(pcd2pgm_options_);
@@ -309,6 +348,13 @@ namespace robot::slam
         auto     nanosec_d = (timestamp - std::floor(timestamp)) * 1e9;
         uint32_t nanosec   = nanosec_d;
         return rclcpp::Time(sec, nanosec);
+    }
+
+    void MappingAlg::get_base_pose(Vec3d& base_position, Mat3d& base_rotation) const
+    {
+        const Mat3d imu_rotation = state_point.rot.toRotationMatrix();
+        base_rotation           = imu_rotation * base_to_imu_rotation.transpose();
+        base_position           = state_point.pos - base_rotation * base_to_imu_translation;
     }
 
     void MappingAlg::pointsBody2World(PointType const* const pi, PointType* const po)
@@ -690,6 +736,30 @@ namespace robot::slam
             odomAftMapped.pose.covariance[i * 6 + 4] = P(k, 1);
             odomAftMapped.pose.covariance[i * 6 + 5] = P(k, 2);
         }
+
+        Vec3d base_position;
+        Mat3d base_rotation;
+        get_base_pose(base_position, base_rotation);
+
+        const Vec3d angular_velocity_imu  = p_imu->angular_velocity();
+        const Vec3d angular_velocity_base = base_to_imu_rotation * angular_velocity_imu;
+        const Vec3d angular_velocity_odom = base_rotation * angular_velocity_base;
+        const Vec3d imu_offset_odom       = base_rotation * base_to_imu_translation;
+
+        Vec3d imu_velocity_odom;
+        for (int i = 0; i < 3; ++i)
+            imu_velocity_odom(i) = state_point.vel[i];
+        const Vec3d base_velocity_odom =
+            imu_velocity_odom - angular_velocity_odom.cross(imu_offset_odom);
+        const Vec3d base_velocity = base_rotation.transpose() * base_velocity_odom;
+
+        odomAftMapped.twist.twist.linear.x  = base_velocity.x();
+        odomAftMapped.twist.twist.linear.y  = base_velocity.y();
+        odomAftMapped.twist.twist.linear.z  = base_velocity.z();
+        odomAftMapped.twist.twist.angular.x = angular_velocity_base.x();
+        odomAftMapped.twist.twist.angular.y = angular_velocity_base.y();
+        odomAftMapped.twist.twist.angular.z = angular_velocity_base.z();
+
         if (odom_pub_en)
             pubOdomAftMapped->publish(odomAftMapped);
 

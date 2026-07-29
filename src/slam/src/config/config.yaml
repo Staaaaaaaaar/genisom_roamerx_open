@@ -7,8 +7,8 @@ laser_mapping:
     filter_size_map: 0.2
     cube_side_length: 1000.0
     common:
-        lid_topic:  "/front_lidar"
-        imu_topic:  "/front_lidar/imu"
+        lid_topic:  "/livox/lidar"
+        imu_topic:  "/livox/imu"
         time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
         time_offset_lidar_to_imu: 0.0 # Time offset between lidar and IMU calibrated by other algorithms, e.g. LI-Init (can be found in README).
         max_lidar_buffer_size: 50   # reset queued sensor data when SLAM falls this many LiDAR frames behind
@@ -33,7 +33,7 @@ laser_mapping:
                     0., 0., 1.]
     publish:
         odom_en: true                # true: publish nav_msgs/Odometry
-        tf_en: false                 # true: publish the configured dynamic TF
+        tf_en: true                 # true: publish the configured dynamic TF
         path_en: false               # true: publish Path
         path_max_poses: 10000        # 0: unlimited; positive: bound Path memory and message size
         map_en: false                # true: publish the accumulated voxel map
@@ -42,11 +42,20 @@ laser_mapping:
     topics:
         odom: "/slam_odom"
     odom:
-        frame_id: "map"
-        child_frame_id: "body"
+        frame_id: "odom"
+        child_frame_id: "base_link"
     tf:
-        frame_id: "map"
-        child_frame_id: "body"
+        frame_id: "odom"
+        child_frame_id: "base_link"
+    # Physical transform from the base_link origin to the IMU origin.
+    # Translation is expressed in base_link; rotation is row-major and rotates
+    # imu_link vectors into base_link. Published pose and Twist are corrected
+    # to the base_link origin.
+    base_link_to_imu:
+        translation: [0.241, 0.02329, 0.16588]
+        rotation: [1., 0., 0.,
+                   0., 1., 0.,
+                   0., 0., 1.]
     save:
         map_en: false                # true: accumulate a bounded voxel map for the save service
         map_voxel_size: 0.2          # meters; one retained point per voxel
